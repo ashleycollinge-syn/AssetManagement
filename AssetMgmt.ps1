@@ -125,7 +125,7 @@ Function LogWrite
 <# Start the main function #>
 
 $ADComputers = Get-ADComputer -Filter * -Properties DNSHostName
-$Password = ConvertTo-SecureString "" -AsPlainText -Force
+$Password = ConvertTo-SecureString "UuBCTtyFYyTPuYazSHz7" -AsPlainText -Force
 $ADCredentials = New-Object System.Management.Automation.PSCredential ("administrator", $Password)
 
 <# For each of the computers in AD, collect information #>
@@ -275,28 +275,41 @@ ForEach ($ADComputer in $ADComputers) {
 
                 $SQLQuery_DiskInsert = 
                 "SET ANSI_WARNINGS OFF;
-                INSERT INTO [isg_AssetMgmt].[dbo].[ISG_Disks]
-                    ([Hostname]
-                    ,[Caption]
-                    ,[DeviceID]
-                    ,[FileSystem]
-                    ,[FreeSpace]
-                    ,[Name]
-                    ,[Size]
-                    ,[Status]
-                    ,[VolumeName]
-                    ,[VolumeSerialNumber])
-                VALUES
-                    ('$Hostname'
-                    ,'$Caption'
-                    ,'$DeviceID'
-                    ,'$FileSystem'
-                    ,'$FreeSpace'
-                    ,'$Name'
-                    ,'$Size'
-                    ,'$Status'
-                    ,'$VolumeName'
-                    ,'$VolumeSerialNumber')
+                IF EXISTS (SELECT * FROM [dbo].[ISG_Disks] WHERE [Caption]='$Caption' AND [Hostname] = '$Hostname')
+                    UPDATE [dbo].[ISG_Disks] 
+                        SET [Size] = '$Size'
+                        ,[FreeSpace] = '$FreeSpace'
+                        ,[DeviceID] = '$DeviceID'
+                        ,[VolumeSerialNumber] = '$VolumeSerialNumber'
+                        ,[VolumeName] = '$VolumeName'
+                        ,[FileSystem] = '$FileSystem'
+                        ,[Name] = '$Name'
+                        ,[Status] = '$Status'
+                        WHERE [Hostname]='$Hostname' AND [Caption] = '$Caption'
+                        ELSE
+                            INSERT INTO [isg_AssetMgmt].[dbo].[ISG_Disks]
+                                ([Hostname]
+                                ,[Caption]
+                                ,[Size]
+                                ,[FreeSpace]
+                                ,[DeviceID]
+                                ,[VolumeSerialNumber]
+                                ,[VolumeName]
+                                ,[FileSystem]
+                                ,[Name]
+                                ,[Status]
+                                )
+                            VALUES
+                                ('$Hostname'
+                                ,'$Caption'
+                                ,'$Size'
+                                ,'$FreeSpace'
+                                ,'$DeviceID'
+                                ,'$VolumeSerialNumber'
+                                ,'$VolumeName'
+                                ,'$FileSystem'
+                                ,'$Name'
+                                ,'$Status')
                 SET ANSI_WARNINGS ON;
                 GO"
 
