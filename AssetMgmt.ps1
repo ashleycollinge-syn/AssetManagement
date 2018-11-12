@@ -72,6 +72,9 @@ $PSScript_GetAsset = {
     $AssetInformation | Add-Member Noteproperty ProcessorNumberOfLogicalProcessors ($CPUInfo | Select-Object -ExpandProperty "NumberOfLogicalProcessors")
     $AssetInformation | Add-Member Noteproperty ProcessorNumberOfCores ($CPUInfo | Select-Object -ExpandProperty "NumberOfCores")
     $AssetInformation | Add-Member Noteproperty ProcessorModel ($CPUInfo | Select-Object -ExpandProperty "Name")
+    $LoggedOnUser = Get-WinEvent
+    $AssetInformation | Add-Member Noteproperty User ($LoggedOnUser | -FilterHashtable @{Logname='Security';ID=4672} -MaxEvents 1|
+    select @{N='User';E={$_.Properties[1].Value}})
     $SystemEnclosure =  Get-WmiObject -Class Win32_SystemEnclosure
     if(!$SystemEnclosure) {
         $AssetInformation | Add-Member Noteproperty isLaptop "true"
@@ -142,6 +145,7 @@ ForEach ($ADComputer in $ADComputers) {
         <# Run the generic asset collection function #>
         Write-Host ($ADComputer.DNSHostName + "Collecting generic asset information")
         $AssetInformation = Invoke-Command -Session $ClientComputerSession -ScriptBlock $PSScript_GetAsset
+        $LoggedOnUser = $AssetInformation.User
         $Hostname = $AssetInformation.Hostname
         $IPAddress = $AssetInformation.IPAddress
         $MacAddress = $AssetInformation.MacAddress
@@ -178,10 +182,12 @@ ForEach ($ADComputer in $ADComputers) {
                 ,[SerialNumber] = '$SerialNumber'
                 ,[IsLaptop] = '$isLaptop'
                 ,[Last_Updated] = '$Last_Updated'
+                ,[User] = '$LoggedOnUser'
                 WHERE [Hostname]='$Hostname'
                 ELSE
                     INSERT INTO [isg_AssetMgmt].[dbo].[ISG_Assets]
                         ([Hostname]
+                        ,[User]
                         ,[IPAddress]
                         ,[MACAddress]
                         ,[OS]
@@ -198,6 +204,7 @@ ForEach ($ADComputer in $ADComputers) {
                         ,[Last_Updated])
                     VALUES
                         ('$Hostname'
+                        ,'$LoggedOnUser'
                         ,'$IPAddress'
                         ,'$MacAddress'
                         ,'$OperatingSystem'
