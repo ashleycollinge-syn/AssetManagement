@@ -1,7 +1,8 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
+import requests
 
 
 from sqlalchemy import create_engine, MetaData, Table, Column, String
@@ -72,6 +73,7 @@ def get_all_assets():
         new_asset['IsLaptop'] = asset.IsLaptop.replace('\r', '').replace('\n', ' ').rstrip()
         new_asset['Last_Updated'] = asset.Last_Updated
         new_asset['SPVersion'] = asset.SPVersion.replace('\r', '').replace('\n', ' ').rstrip()
+        new_asset['User'] = asset.User.replace('\r', '').replace('\n', ' ').rstrip()
         results_json.append(new_asset)
     return jsonify(results_json)
 
@@ -101,6 +103,7 @@ def get_asset_information(asset_name):
         new_asset['IsLaptop'] = asset.IsLaptop.replace('\r', '').replace('\n', ' ').rstrip()
         new_asset['Last_Updated'] = asset.Last_Updated
         new_asset['SPVersion'] = asset.SPVersion.replace('\r', '').replace('\n', ' ').rstrip()
+        new_asset['User'] = asset.User.replace('\r', '').replace('\n', ' ').rstrip()
         results_json.append(new_asset)
     return jsonify(results_json)
 
@@ -121,6 +124,47 @@ def asset_software(asset_name):
         software['software_id'] = product.software_id
         results_json.append(software)
     return jsonify(results_json)
+
+@app.route('/assets/search')
+def asset_search():
+    if request.args.get('user'):
+        results_json = []
+        results = session.query(ISG_Assets).filter_by(User = request.args.get('user')).all()
+        if results:
+            print(results[0].__dir__())
+            print(request.args.get('user'))
+            for asset in results:
+                new_asset = {}
+                new_asset['Hostname'] = asset.Hostname.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['IPAddress'] = asset.IPAddress.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['MACAddress'] = asset.MACAddress.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['host_id'] = asset.host_id
+                new_asset['OS'] = asset.OS.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['Manufacturer'] = asset.Manufacturer.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['Model'] = asset.Model.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['MemoryCapacity'] = asset.MemoryCapacity.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['MaxClockSpeed'] = asset.MaxClockSpeed.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['LogicalCoreCount'] = asset.LogicalCoreCount.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['ProcessorModel'] = asset.ProcessorModel.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['SerialNumber'] = asset.SerialNumber.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['IsLaptop'] = asset.IsLaptop.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['Last_Updated'] = asset.Last_Updated
+                new_asset['SPVersion'] = asset.SPVersion.replace('\r', '').replace('\n', ' ').rstrip()
+                new_asset['User'] = asset.User.replace('\r', '').replace('\n', ' ').rstrip()
+                results_json.append(new_asset)
+        return jsonify(results_json)
+    return "need search itme"
+
+@app.route('/assets/stats', methods=['GET'])
+def get_asset_stats():
+    """
+    get some basic stats on the assets and return it
+    """
+    results_json = {}
+    results_json['Asset Count'] = len(session.query(ISG_Assets).all())
+    results_json['Asset Count without usernames'] = len(session.query(ISG_Assets).filter_by(User = '').all())
+    return jsonify(results_json)
+
 
 @app.route('/assets/<asset_name>/disks', methods=['GET'])
 def get_asset_disks(asset_name):
