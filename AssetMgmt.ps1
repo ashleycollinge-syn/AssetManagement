@@ -72,9 +72,11 @@ $PSScript_GetAsset = {
     $AssetInformation | Add-Member Noteproperty ProcessorNumberOfLogicalProcessors ($CPUInfo | Select-Object -ExpandProperty "NumberOfLogicalProcessors")
     $AssetInformation | Add-Member Noteproperty ProcessorNumberOfCores ($CPUInfo | Select-Object -ExpandProperty "NumberOfCores")
     $AssetInformation | Add-Member Noteproperty ProcessorModel ($CPUInfo | Select-Object -ExpandProperty "Name")
-    $LoggedOnUser = Get-WinEvent
-    $AssetInformation | Add-Member Noteproperty User ($LoggedOnUser | -FilterHashtable @{Logname='Security';ID=4672} -MaxEvents 1|
-    select @{N='User';E={$_.Properties[1].Value}})
+    $startDate = (Get-Date) - (New-TimeSpan -Day 7)
+    $UserLoginTypes = 2,7
+    $Username = Get-WinEvent -FilterHashtable @{Logname='Security';ID=4624;StartTime=$startDate}  | SELECT TimeCreated, @{N='Username'; E={$_.Properties[5].Value}}, @{N='LogonType'; E={$_.Properties[8].Value}} | WHERE {$UserLoginTypes -contains $_.LogonType}  | group UserName |  Sort-Object Count | Select -last 1
+    #$Username = Get-WinEvent -FilterHashtable @{Logname='Security';ID=4624;StartTime=$startDate}  | SELECT TimeCreated, @{N='Username'; E={$_.Properties[5].Value}}, @{N='LogonType'; E={$_.Properties[8].Value}} | WHERE {$UserLoginTypes -contains $_.LogonType}  | group UserName |  Sort-Object Count | Select -last 1 -AsJob | Wait-Job -Timeout 10 | Receive-Job
+    $AssetInformation | Add-Member Noteproperty User $Username.Name
     $SystemEnclosure =  Get-WmiObject -Class Win32_SystemEnclosure
     if(!$SystemEnclosure) {
         $AssetInformation | Add-Member Noteproperty isLaptop "true"
@@ -88,7 +90,6 @@ $PSScript_GetAsset = {
 $PSScript_GetSoftware =
 {
     $value = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall | Get-ItemProperty
-    #$value | ForEach-Object -Process { $_.GetValue('DisplayName'), $_.GetValue('DisplayVersion'), $_.GetValue('Publisher')}
     return $value
 }
 
@@ -97,19 +98,6 @@ $PSScript_GetDisk =
     $value = Get-WmiObject -Class Win32_LogicalDisk
     return $value
 }
-
-$SQLQuery_AssetFailure = 
-"SET ANSI_WARNINGS OFF;
-INSERT INTO [dbo].[ISG_AssetFailures] 
-        ([ComputerName]
-        ,[WinRMResult]
-        ,[datetime_attempt]) 
-    VALUES 
-        ('$localDNSHostname'
-        ,'$_.Exception'
-        ,'$datetime_attempt')
-SET ANSI_WARNINGS ON;
-GO"
 
 <# Declare all of the helper functions we need. #>
 
@@ -133,6 +121,30 @@ $ADCredentials = New-Object System.Management.Automation.PSCredential ("administ
 
 <# For each of the computers in AD, collect information #>
 ForEach ($ADComputer in $ADComputers) {
+        If($ADComputer.DNSHostName -eq "VG2-DC.synseal.com") {
+            Continue
+        }
+        If($ADComputer.DNSHostName -eq "SEL-DC-02.synseal.com") {
+            Continue
+        }
+        If($ADComputer.DNSHostName -eq "SEL-DC-04.synseal.com") {
+            Continue
+        }
+        If($ADComputer.DNSHostName -eq "SEL-DC-05.synseal.com") {
+            Continue
+        }
+        If($ADComputer.DNSHostName -eq "SEL-DC-03.synseal.com") {
+            Continue
+        }
+        If($ADComputer.DNSHostName -eq "SEL-DC-06.synseal.com") {
+            Continue
+        }
+        If($ADComputer.DNSHostName -eq "TEST-RODC-01.synseal.com") {
+            Continue
+        }
+        If($ADComputer.DNSHostName -eq "SEL-DC-01.synseal.com") {
+            Continue
+        }
         Write-Host ($ADComputer.DNSHostName + "Connecting to WinRM")
         try{
             $ClientComputerSession = New-PSSession -ComputerName $ADComputer.DNSHostName -Credential $ADCredentials -Authentication Negotiate -EnableNetworkAccess -ErrorAction Stop
@@ -221,7 +233,7 @@ ForEach ($ADComputer in $ADComputers) {
                         ,'$Last_Updated')
         SET ANSI_WARNINGS ON;
         GO"
-        Invoke-SQLcmd -ServerInstance 'SEL-DBS-11.synseal.com,1433' -query $SQLQuery_AssetInsert -Database isg_AssetMgmt
+        Invoke-SQLcmd -ServerInstance 'SEL-DBS-11.synseal.com,1433' -query $SQLQuery_AssetInsert -Database ISG_AssetMgmt
 
         <# Run the installed software function #>
         Write-Host ($ADComputer.DNSHostName + "Collecting software information")
@@ -235,6 +247,7 @@ ForEach ($ADComputer in $ADComputers) {
                 $DisplayName = $SoftwareProduct.DisplayName
                 $DisplayVersion = $SoftwareProduct.DisplayVersion
                 $Publisher = $SoftwareProduct.Publisher
+                $Last_Updated = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
                 <# Save software info to sql #>
 
@@ -245,6 +258,7 @@ ForEach ($ADComputer in $ADComputers) {
                         SET [DisplayName] = '$DisplayName'
                         ,[DisplayVersion] = '$DisplayVersion'
                         ,[Publisher] = '$Publisher'
+                        ,[Last_Updated] = '$Last_Updated'
                         WHERE [Hostname]='$Hostname' AND [DisplayName] = '$DisplayName'
                         ELSE
                             INSERT INTO [isg_AssetMgmt].[dbo].[ISG_Installed_Software]
@@ -252,16 +266,18 @@ ForEach ($ADComputer in $ADComputers) {
                                 ,[DisplayName]
                                 ,[DisplayVersion]
                                 ,[Publisher]
+                                ,[Last_Updated]
                                 )
                             VALUES
                                 ('$Hostname'
                                 ,'$DisplayName'
                                 ,'$DisplayVersion'
-                                ,'$Publisher')
+                                ,'$Publisher'
+                                ,'$Last_Updated')
                 SET ANSI_WARNINGS ON;
                 GO"
 
-                Invoke-SQLcmd -ServerInstance 'SEL-DBS-11.synseal.com,1433' -query $SQLQuery_SoftwareInsert -Database isg_AssetMgmt
+                Invoke-SQLcmd -ServerInstance 'SEL-DBS-11.synseal.com,1433' -query $SQLQuery_SoftwareInsert -Database ISG_AssetMgmt
             }
         }
 
@@ -279,6 +295,7 @@ ForEach ($ADComputer in $ADComputers) {
                 $Status = $Drive.Status
                 $VolumeName = $Drive.VolumeName
                 $VolumeSerialNumber = $Drive.VolumeSerialNumber
+                $Last_Updated = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
                 $SQLQuery_DiskInsert = 
                 "SET ANSI_WARNINGS OFF;
@@ -292,6 +309,7 @@ ForEach ($ADComputer in $ADComputers) {
                         ,[FileSystem] = '$FileSystem'
                         ,[Name] = '$Name'
                         ,[Status] = '$Status'
+                        ,[Last_Updated] = '$Last_Updated'
                         WHERE [Hostname]='$Hostname' AND [Caption] = '$Caption'
                         ELSE
                             INSERT INTO [isg_AssetMgmt].[dbo].[ISG_Disks]
@@ -305,6 +323,7 @@ ForEach ($ADComputer in $ADComputers) {
                                 ,[FileSystem]
                                 ,[Name]
                                 ,[Status]
+                                ,[Last_Updated]
                                 )
                             VALUES
                                 ('$Hostname'
@@ -316,11 +335,12 @@ ForEach ($ADComputer in $ADComputers) {
                                 ,'$VolumeName'
                                 ,'$FileSystem'
                                 ,'$Name'
-                                ,'$Status')
+                                ,'$Status'
+                                ,'$Last_Updated')
                 SET ANSI_WARNINGS ON;
                 GO"
 
-                Invoke-SQLcmd -ServerInstance 'SEL-DBS-11.synseal.com,1433' -query $SQLQuery_DiskInsert -Database isg_AssetMgmt
+                Invoke-SQLcmd -ServerInstance 'SEL-DBS-11.synseal.com,1433' -query $SQLQuery_DiskInsert -Database ISG_AssetMgmt
             }
         }
         Remove-PSSession -Session $ClientComputerSession
